@@ -1,0 +1,20 @@
+channels:
+  byousoku_money:
+    project_path: ../2511youtuber
+    youtube_channel_id: ""
+    schedule: "0 6 * * *"
+    analytics:
+      enabled: true
+      metrics:
+        - watch_time
+        - ctr
+        - engagement_rate
+        - average_view_duration
+      lookback_days: 7
+    optimizer:
+      enabled: true
+      auto_tune: false
+      ab_test_ratio: 0.1
+      feedback_interval: daily
+      min_sample_size: 10
+    description: "金融ニュース動画チャンネル"

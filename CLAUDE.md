@@ -2,89 +2,132 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project Structure & Module Organization
-Core pipeline modules live in `2511youtuber/src`, with orchestration in `core/`, reusable building blocks in `steps/`, data contracts in `models.py`, and provider integrations under `providers/`. `apps/youtube` wires the workflow that `src/main.py` exposes and acts as the entrypoint. Configuration templates and prompt variants sit in `config/` (including `.env` overrides and YAML run presets). Media assets live in `assets/`; automation helpers sit in `scripts/`. Tests live in `tests/unit` and `tests/integration`, mirroring module names for clarity.
-
 ## Commands
 
-
-### Run Pipeline
+### Setup
 ```bash
-uv run python -m 2511youtuber.src.main --news-query "トヨタ 四半期 決算"
+cd ytmanager
+uv sync
+```
+
+### Run Analytics
+```bash
+uv run python -m ytmanager.analytics --channel byousoku_money
+```
+
+### Run Optimizer
+```bash
+uv run python -m ytmanager.optimizer --channel byousoku_money --mode daily
+```
+
+### Schedule Management
+```bash
+uv run python -m ytmanager.scheduler --action list
+uv run python -m ytmanager.scheduler --action run --channel byousoku_money
 ```
 
 ### Code Quality
 ```bash
-uv run ruff format src tests
-uv run ruff check src tests
-uv run ruff check --fix src tests
+uv run ruff format ytmanager tests
+uv run ruff check ytmanager tests
 ```
 
 ### Testing
 ```bash
-uv run pytest -m unit -v --cov=src --cov-report=term-missing
+uv run pytest -m unit -v
 uv run pytest -m integration -v
-uv run pytest -m e2e -v
-uv run pytest tests/unit/test_specific.py::test_function_name -v
 ```
 
 ## Architecture
 
-### Workflow Orchestration
-The system uses a checkpoint-based orchestration model where `WorkflowOrchestrator` (`2511youtuber/src/core/orchestrator.py`) executes a sequence of `Step` subclasses. Each step:
-- Declares `name`, `output_filename`, and `is_required` attributes
-- Implements `execute(config, previous_outputs)` to produce artifacts
-- Writes outputs to `runs/<run_id>/`
-- Persists completion state in `state.json` for resumability
+### ytmanager Role
+ytmanagerは2511youtuberを管理する上位層。役割:
+1. **Analytics解析** - YouTube Data/Analytics APIで視聴データ収集、metrics計算
+2. **Optimizer自動改善** - analyticsデータから`config/prompts.yaml`自動改定
+3. **Scheduler管理** - cron/シリーズ実行、複数チャンネル管理
+4. **Channels管理** - マルチチャンネル登録、config継承、実行wrapper
 
-Steps execute in order: `NewsCollector` → `ScriptGenerator` → `AudioSynthesizer` → `SubtitleFormatter` → `VideoRenderer` → optional steps (thumbnail, metadata, uploads).
-
-### Configuration System
-`Config.load()` (`2511youtuber/src/utils/config.py`) reads `config/default.yaml` and validates strongly typed Pydantic models. Steps consume only their config slice (e.g., `2511youtuber.config.steps.video.effects`). Provider credentials load from `2511youtuber/config/.env` via `python-dotenv`.
-
-Key config sections:
-- `workflow` - run directory, checkpoint behavior
-- `steps.<step_name>` - per-step parameters (speakers, subtitle width, video effects)
-- `providers` - Gemini models, VOICEVOX server URL, API endpoints
-
-### Provider Pattern
-`src/providers/base.py` defines a fallback chain for resilience. `NewsCollector` tries Perplexity → Gemini. Provider classes abstract LLM/TTS APIs:
-- `GeminiProvider` / `PerplexityProvider` - handle prompt templates from `2511youtuber/config/prompts.yaml`
-- `VOICEVOXProvider` - maps speaker aliases to IDs, auto-starts server, synthesizes audio
-
-### Step Implementations
-Each `2511youtuber/src/steps/*.py` module is self-contained:
-- **NewsCollector** - queries news APIs, returns JSON
-- **ScriptGenerator** - prompts Gemini with speaker profiles, previous context
-- **AudioSynthesizer** - concatenates VOICEVOX audio segments
-- **SubtitleFormatter** - estimates timing by character count, wraps Japanese text
-- **VideoRenderer** - applies FFmpeg filters (Ken Burns, overlays), burns subtitles
-
-Optional steps (`ThumbnailGenerator`, `YouTubeUploader`, `TwitterPoster`, etc.) are config-gated and `is_required=False`.
-
-### Data Flow
+### Directory Structure
 ```
-2511youtuber/src/main.py (entry)
-  └─> apps/youtube/cli.py::run()
-      ├─> _create_run_id() → timestamped identifier
-      ├─> _build_steps(config) → instantiate enabled steps
-      └─> WorkflowOrchestrator.execute()
-          ├─> _load_previous_outputs() → resume from state.json
-          └─> for each step:
-              ├─> step.run(config, previous_outputs)
-              ├─> write step output to runs/<run_id>/<output_filename>
-              └─> persist state
+ytmanager/
+├── src/
+│   ├── analytics/      # YouTube API連携
+│   │   ├── youtube_api.py    # Data/Analytics API
+│   │   ├── metrics.py        # 視聴維持率/CTR計算
+│   │   └── reporter.py       # Aim/MLflow出力
+│   ├── optimizer/      # プロンプト自動改善
+│   │   ├── prompt_tuner.py   # prompts.yaml改定
+│   │   ├── ab_test.py        # A/Bテスト管理
+│   │   └── feedback_loop.py  # metrics→prompt
+│   ├── scheduler/      # 実行管理
+│   │   ├── cron_manager.py   # 定時実行
+│   │   ├── series_manager.py # シリーズ管理
+│   │   └── queue.py          # 実行キュー
+│   └── channels/       # チャンネル管理
+│       ├── registry.py       # チャンネル登録
+│       ├── config_merger.py  # default.yaml継承
+│       └── launcher.py       # 2511youtuber起動
+├── config/
+│   └── channels.yaml   # チャンネル/スケジュール定義
+├── tests/
+└── pyproject.toml
 ```
 
-### Asset and Output Paths
-- `2511youtuber/config/default.yaml` references `assets/` for fonts, character images, intro/outro clips
-- `runs/<run_id>/` contains all generated artifacts: `news.json`, `script.json`, `audio.wav`, `subtitles.srt`, `video.mp4`, `state.json`
-- Intro/outro paths are absolute in config - update if repository moves
+### Feedback Loop
+```
+1. 2511youtuber実行 → runs/*.json生成
+2. Analytics解析 → metrics計算（視聴維持率、CTR、engagement）
+3. Optimizer判定 → config/prompts.yaml改定提案
+4. 承認後 → 次回実行に反映
+```
 
+### Configuration Example
+```yaml
+# ytmanager/config/channels.yaml
+channels:
+  byousoku_money:
+    project_path: ../2511youtuber
+    youtube_channel_id: UC***
+    schedule: "0 6 * * *"
+    analytics:
+      metrics:
+        - watch_time
+        - ctr
+        - engagement_rate
+      lookback_days: 7
+    optimizer:
+      auto_tune: true
+      ab_test_ratio: 0.1
+      feedback_interval: daily
+```
+
+## Implementation Strategy
+
+### Phase 1: 骨格作成
+- ytmanager/ディレクトリ構造
+- channels.yaml定義
+- 2511youtuber launcher wrapper
+
+### Phase 2: Analytics実装
+- YouTube Data API v3連携
+- Analytics API連携
+- metrics計算（watch_time, ctr, engagement_rate）
+- Aim/MLflow出力
+
+### Phase 3: Optimizer実装
+- prompt_tuner: metrics→prompts.yaml改定ロジック
+- ab_test: A/Bテスト管理
+- feedback_loop: 日次/週次サイクル
+
+### Phase 4: Scheduler実装
+- cron_manager: 定時実行
+- series_manager: シリーズ企画管理
+- queue: 実行キュー（競合回避）
 
 ## Code Style
 - Python 3.11+, 4-space indents, 120-char line limit (Ruff)
-- `snake_case` for functions/modules, `PascalCase` for classes, `UPPERCASE` for constants
-- Pydantic models for structured data validation
-- Configuration-driven (YAML) over hardcoded literals
-- Prefer docstrings over inline comments
+- `snake_case` for functions/modules, `PascalCase` for classes
+- Pydantic models for configuration validation
+- Type hints required
+- コメント禁止（ユーザー指示）
+- エラーハンドリング禁止（ユーザー指示）
