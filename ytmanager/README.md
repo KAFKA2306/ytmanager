@@ -29,6 +29,25 @@ cron/シリーズ実行、実行キュー管理
 ### 4. Channels管理
 マルチチャンネル登録、config継承、2511youtuber起動wrapper
 
+### 5. 徹底解説「これ1本」モード
+
+1本の解説動画で扱うべき論点を、推測で補わず明示的なcoverage contractとして固定します。
+同じ入力からは同じ`Q01`, `Q02`, ...のIDが生成され、全IDが回答済みになるまで完了扱いにしません。
+
+```bash
+cd ytmanager
+python -m src.content_modes \
+  --topic "NISA" \
+  --audience "初心者" \
+  --question "何が変わった？" \
+  --question "仕組みは？" \
+  --question "注意点は？"
+```
+
+出力JSONの`completion_contract.required_coverage_ids`を台本・レビュー工程へ引き渡すことで、長尺化そのものではなく「必要論点の取りこぼしゼロ」を完了条件にできます。空の論点一覧はエラーにして、モード側が専門知識を勝手に補完しない設計です。
+
+YouTube上で完成動画に手動チャプターを付ける場合は、YouTube公式仕様に従って動画説明欄へタイムスタンプとタイトルを設定してください。本モードは完成前のcoverage contractだけを扱い、未確定の再生時間からタイムスタンプを捏造しません。
+
 ## セットアップ
 
 ```bash
