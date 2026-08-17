@@ -1,5 +1,7 @@
 # aiytmanager
 
+[![Test](https://github.com/KAFKA2306/ytmanager/actions/workflows/test.yml/badge.svg)](https://github.com/KAFKA2306/ytmanager/actions/workflows/test.yml)
+
 YouTube動画自動生成システムの管理リポジトリ
 
 ## 役割
